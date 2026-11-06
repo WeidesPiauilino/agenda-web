@@ -5,11 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Agenda Web Sincronizada</title>
 <!--
-  AGENDA PESSOAL COM FIREBASE + GITHUB PAGES
-  --------------------------------------------------
-  1. Insira suas credenciais do Firebase no objeto 'firebaseConfig' abaixo.
-  2. Ative o Firestore Database e o Authentication (Google ou E-mail) no console do Firebase.
-  3. Envie este arquivo como 'index.html' para o seu repositório no GitHub.
+  AGENDA PESSOAL COM FIREBASE (GOOGLE + E-MAIL/SENHA) + GITHUB PAGES
+  ------------------------------------------------------------------
+  1. Cole suas credenciais no objeto 'firebaseConfig'.
+  2. No Firebase Console:
+     - Ative o Firestore Database (Modo de Teste).
+     - Em Authentication -> Métodos de login: Ative Google E E-mail/Senha.
+  3. Envie este arquivo como 'index.html' para o repositório no GitHub.
 -->
 <style>
 :root{--bg:#eef1f4;--sf:#fff;--tx:#14202b;--mut:#5d6b78;--ln:#d5dce2;--ac:#0e7c86;--ok:#2e8b57;--bad:#c4402f}
@@ -21,7 +23,6 @@ body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;background
 header{padding:calc(16px + env(safe-area-inset-top,0px)) 20px 4px;display:flex;justify-content:space-between;align-items:center}
 h1{margin:0;font:600 1.7rem Georgia,"Times New Roman",serif}
 .user-bar{display:flex;align-items:center;gap:10px;font-size:.85rem}
-.user-bar img{width:28px;height:28px;border-radius:50%}
 main{flex:1;overflow-y:auto;padding:0 16px 96px}
 h2{display:flex;justify-content:space-between;align-items:baseline;margin:22px 4px 6px;font:600 1.05rem Georgia,"Times New Roman",serif}
 h2.bad{color:var(--bad)}
@@ -61,7 +62,10 @@ nav button.on{color:var(--ac);font-weight:700}
 .sh h3{margin:0;font:600 1.2rem Georgia,serif}
 .r{display:flex;gap:8px}
 .r .bt{margin:0}
-.auth-box{padding:40px 20px;text-align:center}
+.auth-box{padding:24px 16px;text-align:center}
+.divider{margin:20px 0;border-top:1px solid var(--ln);position:relative}
+.divider span{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--bg);padding:0 10px;font-size:0.8rem;color:var(--mut)}
+.err-msg{color:var(--bad);font-size:0.85rem;margin:8px 0;text-align:left}
 </style>
 </head>
 <body>
@@ -82,10 +86,11 @@ nav button.on{color:var(--ac);font-weight:700}
 // ---------- Firebase SDK Moderno (v10) ----------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { 
-  getFirestore, collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, writeBatch 
+  getFirestore, collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { 
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged 
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // !!! COLE SUAS CREDENCIAIS DO FIREBASE AQUI !!!
@@ -130,13 +135,11 @@ mes.setDate(1);
 
 // ---------- Sincronização em Tempo Real (Firestore) ----------
 function escutarDadosUsuario(uid) {
-  // Escuta a coleção de eventos do usuário
   onSnapshot(collection(db, "users", uid, "eventos"), (snapshot) => {
     D.eventos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     render();
   });
 
-  // Escuta a coleção de lembretes rápidos
   onSnapshot(collection(db, "users", uid, "rapidos"), (snapshot) => {
     D.rapidos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     render();
@@ -176,8 +179,21 @@ const sec = (t, l, h, c) => l.length ? `<h2 class="${c || ''}">${t}</h2>${h}` : 
 function vLogin() {
   return `<div class="auth-box">
     <h2>Bem-vindo à sua Agenda</h2>
-    <p class="vz">Faça login para sincronizar seus compromissos entre o celular e o computador em tempo real.</p>
-    <button class="bt" id="btnLogin">Entrar com Google</button>
+    <p class="vz">Acesse ou crie sua conta para sincronizar seus compromissos.</p>
+
+    <form id="authForm" style="display:flex; flex-direction:column; gap:10px; text-align:left;">
+      <input type="email" id="authEmail" placeholder="Seu e-mail" required autocomplete="username">
+      <input type="password" id="authPassword" placeholder="Sua senha (mínimo 6 caracteres)" required minlength="6" autocomplete="current-password">
+      <div id="authErr" class="err-msg" style="display:none;"></div>
+      <div class="r">
+        <button type="submit" class="bt" id="btnEntrar">Entrar</button>
+        <button type="button" class="bt sec" id="btnCadastrar">Criar Conta</button>
+      </div>
+    </form>
+
+    <div class="divider"><span>ou</span></div>
+
+    <button class="bt sec" id="btnLoginGoogle">Entrar com Google</button>
   </div>`;
 }
 
@@ -226,7 +242,7 @@ function vRapidos() {
 
 function vMais() {
   return `<h2>Nuvem & Sincronização</h2>
-    <p class="vz">Conectado como <b>${esc(currentUser ? currentUser.email : 'Visitante')}</b>. Seus dados são salvos no Firebase em tempo real.</p>
+    <p class="vz">Conectado como <b>${esc(currentUser ? (currentUser.email || currentUser.displayName || 'Usuário') : 'Visitante')}</b>.</p>
     <h2>Tema</h2>
     <select id="tema"><option value="auto">Automático</option><option value="claro">Claro</option><option value="escuro">Escuro</option></select>
     <h2>Resumo dos dados</h2>
@@ -235,15 +251,60 @@ function vMais() {
 
 const TITULOS = { resumo: 'Resumo', agenda: 'Agenda', rapidos: 'Lembretes rápidos', mais: 'Dados e ajustes' };
 
+function traduzirErroAuth(code) {
+  switch (code) {
+    case 'auth/invalid-email': return 'Formato de e-mail inválido.';
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'E-mail ou senha incorretos.';
+    case 'auth/email-already-in-use': return 'Este e-mail já está cadastrado.';
+    case 'auth/weak-password': return 'A senha deve ter pelo menos 6 caracteres.';
+    default: return 'Ocorreu um erro no acesso. Tente novamente.';
+  }
+}
+
 function render() {
   const app = $('#app');
   if (!currentUser) {
     app.innerHTML = vLogin();
     $('#fab').hidden = true;
     $('nav').style.display = 'none';
-    $('#btnLogin').onclick = () => signInWithPopup(auth, googleProvider).catch(e => alert(e.message));
+
+    const errDiv = $('#authErr');
+    const mostrarErro = msg => { errDiv.textContent = msg; errDiv.style.display = 'block'; };
+    
+    // Login com Google
+    $('#btnLoginGoogle').onclick = () => signInWithPopup(auth, googleProvider).catch(e => mostrarErro(traduzirErroAuth(e.code)));
+
+    // Login com E-mail / Senha (Submit)
+    $('#authForm').onsubmit = async (ev) => {
+      ev.preventDefault();
+      errDiv.style.display = 'none';
+      const email = $('#authEmail').value.trim();
+      const senha = $('#authPassword').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, senha);
+      } catch (e) {
+        mostrarErro(traduzirErroAuth(e.code));
+      }
+    };
+
+    // Criar Conta com E-mail / Senha
+    $('#btnCadastrar').onclick = async () => {
+      errDiv.style.display = 'none';
+      const email = $('#authEmail').value.trim();
+      const senha = $('#authPassword').value;
+      if (!email || !senha) { mostrarErro('Preencha o e-mail e a senha.'); return; }
+      try {
+        await createUserWithEmailAndPassword(auth, email, senha);
+      } catch (e) {
+        mostrarErro(traduzirErroAuth(e.code));
+      }
+    };
+
     return;
   }
+
   $('nav').style.display = 'flex';
   document.documentElement.dataset.tema = D.config.tema === 'auto' ? '' : D.config.tema;
   const y = app.scrollTop;
